@@ -36,6 +36,46 @@ If you want a `.xcodeproj`, run:
 swift package generate-xcodeproj
 ```
 
+## Distributing Without Xcode
+End users do not need Xcode. Build and package a `.app` once, then distribute it as a zip or dmg:
+
+```bash
+./scripts/package-macos.sh
+```
+
+The app bundle will be at:
+`build/SpendyTime.app`
+
+### Versioning
+Override the app version when packaging:
+```bash
+./scripts/package-macos.sh --version 1.2.3
+```
+
+### App Icon
+Provide a 1024x1024 PNG to generate an `.icns` bundle icon:
+```bash
+./scripts/package-macos.sh --icon /path/to/icon-1024.png
+```
+
+### DMG
+Create a DMG installer:
+```bash
+./scripts/package-macos.sh --dmg
+```
+
+### Optional: Code Signing
+To avoid Gatekeeper warnings for external distribution, sign and notarize:
+
+```bash
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./scripts/package-macos.sh
+```
+
+Then notarize with:
+```bash
+xcrun notarytool submit "build/SpendyTime.app" --keychain-profile "YOUR_PROFILE" --wait
+```
+
 ## Data Location
 SQLite database is stored at:
 `~/Library/Application Support/SpendyTime/spendytime.sqlite`
