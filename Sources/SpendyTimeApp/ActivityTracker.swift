@@ -8,6 +8,7 @@ final class ActivityTracker {
     private var timer: Timer?
 
     private let pollInterval: TimeInterval = 10
+    private let idleThreshold: TimeInterval = 5 * 60
 
     init(store: ActivityStore) {
         self.store = store
@@ -24,6 +25,13 @@ final class ActivityTracker {
 
     private func poll() {
         let now = Date()
+
+        if isUserIdle() {
+            store.endCurrentActivity(at: now)
+            store.refreshTodayViews()
+            return
+        }
+
         guard let frontmost = NSWorkspace.shared.frontmostApplication,
               let appName = frontmost.localizedName,
               let bundleId = frontmost.bundleIdentifier
@@ -56,6 +64,11 @@ final class ActivityTracker {
         )
         store.record(snapshot: snapshot, at: now)
         store.refreshTodayViews()
+    }
+
+    private func isUserIdle() -> Bool {
+        let seconds = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .any)
+        return seconds >= idleThreshold
     }
 }
 

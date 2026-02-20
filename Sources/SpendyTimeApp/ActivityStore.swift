@@ -31,6 +31,34 @@ final class ActivityStore: ObservableObject {
         latestWebsiteTotals = fetchWebsiteTotals(from: startOfDay)
     }
 
+    func endCurrentActivity(at date: Date) {
+        guard currentActivityId != nil else { return }
+        updateCurrentActivityEndTime(to: date)
+        currentActivityId = nil
+        currentSnapshot = nil
+    }
+
+    func exportTodayCSV() -> String {
+        let startOfDay = Calendar.current.startOfDay(for: Date())
+        let sessions = fetchTimeline(from: startOfDay).sorted { $0.start < $1.start }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        var lines: [String] = []
+        lines.append("start_time,end_time,app_name,window_title,url,website_host,duration_seconds")
+        for session in sessions {
+            let start = formatter.string(from: session.start)
+            let end = formatter.string(from: session.end)
+            let app = csvEscape(session.appName)
+            let title = csvEscape(session.windowTitle ?? "")
+            let url = csvEscape(session.url ?? "")
+            let host = csvEscape(session.websiteHost ?? "")
+            let duration = String(format: "%.0f", session.duration)
+            lines.append("\(start),\(end),\(app),\(title),\(url),\(host),\(duration)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
     private func insertActivity(snapshot: ActivitySnapshot, start: Date, end: Date) -> Int64? {
         let sql = """
         INSERT INTO activities (start_time, end_time, app_name, bundle_id, window_title, url, website_host)
@@ -123,4 +151,12 @@ final class ActivityStore: ObservableObject {
             return WebsiteTotal(host: host, duration: total)
         }
     }
+}
+
+private func csvEscape(_ value: String) -> String {
+    if value.contains(",") || value.contains("\"") || value.contains("\n") {
+        let escaped = value.replacingOccurrences(of: "\"", with: "\"\"")
+        return "\"\(escaped)\""
+    }
+    return value
 }

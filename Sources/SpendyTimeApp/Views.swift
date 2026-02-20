@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import AppKit
 
 struct MenuBarRootView: View {
@@ -60,6 +61,10 @@ struct MenuBarRootView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
+                Button("Export CSV") {
+                    exportCSV()
+                }
+                .buttonStyle(.bordered)
                 Button("Quit SpendyTime") {
                     NSApp.terminate(nil)
                 }
@@ -77,6 +82,21 @@ struct MenuBarRootView: View {
         .onAppear {
             store.refreshTodayViews()
             permissions.refresh()
+        }
+    }
+
+    private func exportCSV() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.nameFieldStringValue = "spendytime-\(dateStamp()).csv"
+        panel.canCreateDirectories = true
+        if panel.runModal() == .OK, let url = panel.url {
+            let csv = store.exportTodayCSV()
+            do {
+                try csv.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                NSSound.beep()
+            }
         }
     }
 }
@@ -178,4 +198,10 @@ private func durationString(_ duration: TimeInterval) -> String {
         return "\(hours)h \(minutes)m"
     }
     return "\(minutes)m"
+}
+
+private func dateStamp() -> String {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter.string(from: Date())
 }
