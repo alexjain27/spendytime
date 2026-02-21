@@ -14,7 +14,7 @@ let package = Package(
             dependencies: [],
             path: "Sources/SpendyTimeApp",
             linkerSettings: [
-                .linkedLibrary("sqlite3")
+                .linkedLibrary("sqlcipher")
             ]
         )
     ]

@@ -1,8 +1,12 @@
 import Foundation
 import SQLite3
+import Security
 
 // Swift equivalent of the C macro ((sqlite3_destructor_type)-1)
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+@_silgen_name("sqlite3_key")
+private func sqlite3_key(_ db: OpaquePointer?, _ key: UnsafeRawPointer?, _ keyLen: Int32) -> Int32
 
 final class Database {
     private var db: OpaquePointer?
@@ -13,6 +17,30 @@ final class Database {
         if sqlite3_open(fileURL.path, &db) != SQLITE_OK {
             print("Failed to open database at \(fileURL.path)")
             return
+        }
+        Database.applyFilePermissions(for: fileURL)
+        guard let key = applyEncryptionKey() else {
+            print("Failed to apply database encryption key.")
+            return
+        }
+        _ = execute(sql: "PRAGMA cipher_migrate;", bindings: [])
+        if !isReadableDatabase() {
+            if Database.migratePlaintextDatabase(at: fileURL, key: key) {
+                sqlite3_close(db)
+                db = nil
+                if sqlite3_open(fileURL.path, &db) != SQLITE_OK {
+                    print("Failed to reopen encrypted database at \(fileURL.path)")
+                    return
+                }
+                Database.applyFilePermissions(for: fileURL)
+                guard applyEncryptionKey() != nil else {
+                    print("Failed to apply database encryption key after migration.")
+                    return
+                }
+            } else {
+                print("Failed to migrate plaintext database.")
+                return
+            }
         }
         createTables()
     }
@@ -50,7 +78,81 @@ final class Database {
     private static func ensureDirectoryExists(for fileURL: URL) {
         let dir = fileURL.deletingLastPathComponent()
         if !FileManager.default.fileExists(atPath: dir.path) {
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(
+                at: dir,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+        } else {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+        }
+    }
+
+    private static func applyFilePermissions(for fileURL: URL) {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+    }
+
+    private func applyEncryptionKey() -> Data? {
+        guard let db else { return nil }
+        guard let key = KeychainStore.loadOrCreateKey() else { return nil }
+        let result = key.withUnsafeBytes { bytes -> Int32 in
+            guard let base = bytes.baseAddress else { return SQLITE_ERROR }
+            return sqlite3_key(db, base, Int32(bytes.count))
+        }
+        if result != SQLITE_OK {
+            return nil
+        }
+        return key
+    }
+
+    private func isReadableDatabase() -> Bool {
+        guard let db else { return false }
+        var statement: OpaquePointer?
+        let status = sqlite3_prepare_v2(db, "SELECT name FROM sqlite_master LIMIT 1;", -1, &statement, nil)
+        if status != SQLITE_OK {
+            sqlite3_finalize(statement)
+            return false
+        }
+        sqlite3_finalize(statement)
+        return true
+    }
+
+    private static func migratePlaintextDatabase(at url: URL, key: Data) -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return true
+        }
+        let tmpURL = url.deletingLastPathComponent().appendingPathComponent("spendytime-encrypted.sqlite")
+        try? FileManager.default.removeItem(at: tmpURL)
+
+        var db: OpaquePointer?
+        if sqlite3_open(url.path, &db) != SQLITE_OK {
+            return false
+        }
+        defer { sqlite3_close(db) }
+
+        let keyHex = key.map { String(format: "%02x", $0) }.joined()
+        let attachSQL = "ATTACH DATABASE '\(tmpURL.path)' AS encrypted KEY \"x'\(keyHex)'\";"
+        let exportSQL = "SELECT sqlcipher_export('encrypted');"
+        let detachSQL = "DETACH DATABASE encrypted;"
+
+        if sqlite3_exec(db, attachSQL, nil, nil, nil) != SQLITE_OK {
+            return false
+        }
+        if sqlite3_exec(db, exportSQL, nil, nil, nil) != SQLITE_OK {
+            _ = sqlite3_exec(db, detachSQL, nil, nil, nil)
+            return false
+        }
+        if sqlite3_exec(db, detachSQL, nil, nil, nil) != SQLITE_OK {
+            return false
+        }
+
+        do {
+            try FileManager.default.removeItem(at: url)
+            try FileManager.default.moveItem(at: tmpURL, to: url)
+            applyFilePermissions(for: url)
+            return true
+        } catch {
+            return false
         }
     }
 

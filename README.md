@@ -46,6 +46,17 @@ End users do not need Xcode. Build and package a `.app` once, then distribute it
 The app bundle will be at:
 `build/SpendyTime.app`
 
+### SQLCipher Dependency (Required)
+SpendyTime encrypts its local database with SQLCipher. Install it before building:
+```bash
+brew install sqlcipher
+```
+
+If you have SQLCipher in a non-standard location, pass:
+```bash
+LIBSQLCIPHER_PATH="/path/to/libsqlcipher.dylib" ./scripts/package-macos.sh
+```
+
 ### Versioning
 Override the app version when packaging:
 ```bash
@@ -79,3 +90,8 @@ xcrun notarytool submit "build/SpendyTime.app" --keychain-profile "YOUR_PROFILE"
 ## Data Location
 SQLite database is stored at:
 `~/Library/Application Support/SpendyTime/spendytime.sqlite`
+
+## Data Security
+- Database is encrypted at rest using SQLCipher.
+- App data directory is created with `0700` permissions; DB file uses `0600`.
+- Encryption key is stored in the user's Keychain (per-user access).

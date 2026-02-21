@@ -10,6 +10,7 @@ EXECUTABLE="${ROOT_DIR}/.build/release/${APP_NAME}"
 VERSION="${VERSION:-}"
 ICON_PATH="${ICON_PATH:-}"
 CREATE_DMG=false
+LIBSQLCIPHER_PATH="${LIBSQLCIPHER_PATH:-}"
 
 usage() {
   cat <<'USAGE'
@@ -19,11 +20,13 @@ Options:
   --version <semver>   Override app version (CFBundleVersion / CFBundleShortVersionString)
   --icon <png>         Path to a 1024x1024 PNG to generate AppIcon.icns
   --dmg                Create a SpendyTime.dmg in build/
+  --libsqlcipher <path>  Path to libsqlcipher.dylib (default: Homebrew)
 
 Environment:
   SIGN_IDENTITY        Code signing identity (Developer ID Application: ...)
   VERSION              Same as --version
   ICON_PATH            Same as --icon
+  LIBSQLCIPHER_PATH    Path to libsqlcipher.dylib (default: Homebrew)
 USAGE
 }
 
@@ -40,6 +43,10 @@ while [[ $# -gt 0 ]]; do
     --dmg)
       CREATE_DMG=true
       shift
+      ;;
+    --libsqlcipher)
+      LIBSQLCIPHER_PATH="${2:-}"
+      shift 2
       ;;
     --help|-h)
       usage
@@ -59,7 +66,7 @@ swift build -c release
 
 echo "Creating .app bundle..."
 rm -rf "${APP_DIR}"
-mkdir -p "${APP_DIR}/Contents/MacOS" "${APP_DIR}/Contents/Resources"
+mkdir -p "${APP_DIR}/Contents/MacOS" "${APP_DIR}/Contents/Resources" "${APP_DIR}/Contents/Frameworks"
 cp "${EXECUTABLE}" "${APP_DIR}/Contents/MacOS/${APP_NAME}"
 cp "${INFO_PLIST}" "${APP_DIR}/Contents/Info.plist"
 
@@ -93,6 +100,26 @@ if [[ -n "${ICON_PATH}" ]]; then
   /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "${APP_DIR}/Contents/Info.plist" >/dev/null 2>&1 || true
   /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "${APP_DIR}/Contents/Info.plist"
 fi
+
+if [[ -z "${LIBSQLCIPHER_PATH}" ]]; then
+  if command -v brew >/dev/null 2>&1; then
+    BREW_PREFIX="$(brew --prefix sqlcipher 2>/dev/null || true)"
+    if [[ -n "${BREW_PREFIX}" ]]; then
+      LIBSQLCIPHER_PATH="${BREW_PREFIX}/lib/libsqlcipher.dylib"
+    fi
+  fi
+fi
+
+if [[ -z "${LIBSQLCIPHER_PATH}" || ! -f "${LIBSQLCIPHER_PATH}" ]]; then
+  echo "libsqlcipher.dylib not found. Set LIBSQLCIPHER_PATH or install sqlcipher via Homebrew."
+  exit 1
+fi
+
+echo "Bundling libsqlcipher from ${LIBSQLCIPHER_PATH}"
+cp "${LIBSQLCIPHER_PATH}" "${APP_DIR}/Contents/Frameworks/libsqlcipher.dylib"
+install_name_tool -id "@rpath/libsqlcipher.dylib" "${APP_DIR}/Contents/Frameworks/libsqlcipher.dylib"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "${APP_DIR}/Contents/MacOS/${APP_NAME}" || true
+install_name_tool -change "${LIBSQLCIPHER_PATH}" "@rpath/libsqlcipher.dylib" "${APP_DIR}/Contents/MacOS/${APP_NAME}" || true
 
 if [[ -n "${SIGN_IDENTITY:-}" ]]; then
   echo "Codesigning with identity: ${SIGN_IDENTITY}"
