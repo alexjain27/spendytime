@@ -2,6 +2,11 @@
 
 SpendyTime is a macOS menu-bar app that tracks active app and browser usage, showing a timeline plus daily totals. It’s designed for lightweight time awareness and easy export.
 
+## Primary Use Case
+You sit down to work. Hours later: "Oh no, I didn't track my time. When did I start? What was I working on? When did I take a break?"
+
+SpendyTime answers those questions automatically—no start/stop timers, no remembering to click anything. It shows what you did and when you did it.
+
 ## Features
 - Menu-bar popover with timeline, app totals, and website totals
 - Safari + Chrome tab tracking (URL + title)
